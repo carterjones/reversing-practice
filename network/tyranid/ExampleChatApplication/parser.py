@@ -6,6 +6,7 @@ import os
 from struct import unpack
 import sys
 
+SYN_BYTES = b"BINX"
 MSG_TYPES = {
     0x0: "syn",
     0x1: "ack",
@@ -18,8 +19,8 @@ MSG_TYPES = {
 def read_bytes(f, length):
     bytes = f.read(length)
     if len(bytes) != length:
-        raise Exception("Not enough bytes in stream: %d vs %d" %
-                        (len(bytes), length))
+        raise Exception(
+            f"not enough bytes in stream: {len(bytes)} vs {length}")
     return bytes
 
 
@@ -58,6 +59,9 @@ class Packet(object):
         self.msg_type = read_byte(f)
         self.data_bytes = read_bytes(f, self.length - 1)
         self.data_parts = extract_strings(self.data_bytes)
+        expected_checksum = sum(self.data_bytes) + self.msg_type
+        if expected_checksum != self.checksum:
+            print(f"checksum failed: {expected_checksum} vs {self.checksum}")
 
     def __str__(self) -> str:
         string = f"{self.length: > 3} | {self.checksum: > 5} | "
@@ -67,15 +71,22 @@ class Packet(object):
         return string
 
 
+def parse(data, source):
+    if data == SYN_BYTES:
+        return f"conn: {data}"
+    f = io.BytesIO(data)
+    return Packet(f)
+
+
 if __name__ == "__main__":
     filename = sys.argv[1]
     file_size = os.path.getsize(filename)
 
     with open(filename, "rb") as f:
         conn = read_bytes(f, 4)
-        if conn == b"BINX":
+        if conn == SYN_BYTES:
             # The first four bytes indicate a connection.
-            print("Connection: %s" % conn)
+            print(f"conn: {conn}")
         else:
             # The first four bytes do not indicate a connection. Reset the file
             # reader.
